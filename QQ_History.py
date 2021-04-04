@@ -4,11 +4,10 @@ import time
 import os
 import traceback
 import json
-
+import base64
 
 _crc64_init = False
 _crc64_table = [0] * 256
-
 
 def crc64(s):
     global _crc64_init
@@ -32,21 +31,22 @@ def join_file(*rel):
     return os.path.join(os.path.dirname(__file__), *rel)
 
 
+def get_base64_from_pic(path):
+    with open(path, "rb") as image_file:
+        return (b'data:image/png;base64,' + base64.b64encode(image_file.read())).decode("utf-8") 
+
 def decode_pic(data):
     from proto.RichMsg_pb2 import PicRec
-    try:
-        doc = PicRec()
-        doc.ParseFromString(data)
-        url = 'chatimg:' + doc.md5
-        filename = hex(crc64(url))
-        filename = 'Cache_' + filename.replace('0x', '')
-        rel_path = join_file('com.tencent.mobileqq/Tencent/MobileQQ/chatpic/chatimg', filename[-3:], filename)
-        if os.path.exists(rel_path):
-            w = 'auto' if doc.uint32_thumb_width == 0 else str(doc.uint32_thumb_width)
-            h = 'auto' if doc.uint32_thumb_height == 0 else str(doc.uint32_thumb_height)
-            return '<img src="{}" width="{}" height="{}" />'.format(rel_path, w, h)
-    except:
-        pass
+    doc = PicRec()
+    doc.ParseFromString(data)
+    url = 'chatimg:' + doc.md5
+    filename = hex(crc64(url))
+    filename = 'Cache_' + filename.replace('0x', '')
+    rel_path = join_file('mobileqq-cache/Tencent/MobileQQ/chatpic/chatimg', filename[-3:], filename)
+    if os.path.exists(rel_path):
+        w = 'auto' if doc.uint32_thumb_width == 0 else str(doc.uint32_thumb_width)
+        h = 'auto' if doc.uint32_thumb_height == 0 else str(doc.uint32_thumb_height)
+        return '<img src="{}" width="{}" height="{}" />'.format(get_base64_from_pic(rel_path), w, h)
     return '[图片]'
 
 
@@ -85,6 +85,8 @@ class QQoutput():
 
         self.num_to_name = {}
         self.emoji_map = self.map_new_emoji()
+
+        self.target = ""
 
     def decrypt(self, data, msg_type=-1000):
         msg = b''
@@ -127,7 +129,7 @@ class QQoutput():
                     filename = "old/" + index + ".gif"
                 msg = msg.replace(
                     msg[pos:pos + 2],
-                    '<img src="{}" alt="{}" />'.format(join_file('emoticon', filename), index))
+                    '<img src="{}" alt="{}" />'.format(get_base64_from_pic(join_file('emoticon', filename)), index))
             else:
                 msg = msg.replace(msg[pos:pos + 2], '[emoji:{}]'.format(str(num)))
             pos = msg.find('\x14')
@@ -200,34 +202,37 @@ class QQoutput():
 
     def output(self):
         name1 = "我"
-        file = str(self.qq) + ".html"
-        f2 = open(file, "w", encoding="utf-8")
-        f2.write(
+        output = ""
+        output += (
             "<head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" /></head>"
         )
         allmsg = self.message()
-        f2.write("<div style='white-space: pre-line'>")
+        output += ("<div style='white-space: pre-line'>")
         for ts, msg_type, uid, msg in allmsg:
             if not msg:
                 continue
             if uid == str(self.qq_self):
-                f2.write("<p align='right'>")
-                f2.write("<font color=\"green\">")
-                f2.write(ts)
-                f2.write("</font>-----<font color=\"blue\"><b>")
-                f2.write(name1)
-                f2.write("</font></b></br>")
+                output += ("<p align='right'>")
+                output += ("<font color=\"green\">")
+                output += (ts)
+                output += ("</font>-----<font color=\"blue\"><b>")
+                output += (name1)
+                output += ("</font></b></br>")
             else:
-                f2.write("<p align='left'>")
-                f2.write("<font color=\"blue\"><b>")
-                f2.write(self.num_to_name.get(uid) or uid)
-                f2.write("</b></font>-----<font color=\"green\">")
-                f2.write(ts)
-                f2.write("</font></br>")
-            f2.write(self.add_emoji(msg))
-            f2.write("</br></br>")
-            f2.write("</p>")
-        f2.write("</div>")
+                if self.target == "":
+                    self.target = (self.num_to_name.get(uid) or uid)
+                output += ("<p align='left'>")
+                output += ("<font color=\"blue\"><b>")
+                output += (self.num_to_name.get(uid) or uid)
+                output += ("</b></font>-----<font color=\"green\">")
+                output += (ts)
+                output += ("</font></br>")
+            output += (self.add_emoji(msg))
+            output += ("</br></br>")
+            output += ("</p>")
+        output += ("</div>")
+        file = open("./dist/" + self.target + "(" + str(self.qq) + ")" + ".html", "w", encoding="utf-8")
+        file.write(output)
 
     def get_key(self):
         self.unify_path()
